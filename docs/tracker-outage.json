@@ -1,0 +1,10 @@
+{
+  "seed": 42,
+  "final_angle_error_deg": 0.0891303354914,
+  "gyro_only_error_deg": 18.5732537548,
+  "bias_error_rad_s": 7.1600593412e-05,
+  "max_dropout_error_deg": 0.552708470702,
+  "accepted": 259,
+  "rejected": 1,
+  "missing": 40
+}
