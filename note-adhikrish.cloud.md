@@ -1,28 +1,35 @@
 # attitude-filter
 
-star trackers go blind sometimes (sun in the baffle, a slew, a fault), and while they're out the spacecraft points on gyro alone. the gyro has a small constant bias, and integrating a small constant error for long enough gets you somewhere very confident and very wrong.
+star trackers drop out during slews, sun exclusion and faults, and while they're unavailable a spacecraft has to estimate attitude from its gyros alone. gyros carry a persistent bias, and integrating it turns a small rate error into a growing attitude error. the way to survive an outage is to estimate the bias while the tracker is still available.
 
-in the seeded run, gyro-only ends up **18.57°** off. the filter ends at **0.089°**, because it learned the gyro's bias while the tracker could still see.
+in this project's seeded scenario, gyro-only integration ends **18.57°** off and the filter ends **0.089°** off.
 
 ```text
 gyro -> subtract bias -> predict attitude + covariance
                               |
-         tracker -> gate on residual -> reject, or correct attitude + bias -> reset error frame
+    tracker -> gate on residual -> reject, or correct attitude + bias -> reset error frame
 ```
 
-## how
+## design
 
-it's a multiplicative EKF: a unit quaternion for attitude, bias estimated alongside it, and a 6-state error covariance (three rotation, three bias), so the four quaternion numbers never get treated as independent.
+it's a multiplicative extended kalman filter: a unit quaternion for attitude, gyro bias estimated alongside it, and a six-state error covariance (three rotation errors, three bias errors), so the four quaternion components are never treated as independent uncertain quantities.
 
-the fiddly bits are where filters usually break quietly. prediction integrates the dynamics and the continuous noise with a block matrix exponential, so the result doesn't change with your sample rate. the update uses Joseph form and a factored solve, no inverses. after every correction the covariance gets moved into the new error frame with the right Jacobian, because normalising the quaternion and calling it a day leaves the uncertainty pointing at the old frame. updates are built as a full candidate first, so a bad reading can't leave the filter half-updated. equations in [filter.md](docs/filter.md).
+the parts that usually go wrong are handled explicitly:
+
+- prediction integrates the linearised dynamics and continuous process noise with a block matrix exponential, so results don't depend on the gyro sample rate.
+- the measurement update uses a factored solve and the joseph form, with no explicit matrix inverse, to preserve symmetry and positive definiteness.
+- after each accepted correction the covariance is transformed into the new error frame using the right jacobian of the rotation exponential. normalising the quaternion alone leaves the covariance expressed in the old frame.
+- every update is computed as a complete candidate and validated before it replaces the stored state, so an invalid measurement or failed factorisation can't leave a partially updated filter.
+
+the derivation is in [filter.md](docs/filter.md).
 
 ## results
 
-300 s run, tracker blind from 80 to 120 s, one fake star reading at 150 s that gets rejected. seed 42: 0.089° vs 18.57°. simulation, not flight data.
+a 300 s scenario with the tracker unavailable from 80 to 120 s and a false observation injected at 150 s, which the residual gate rejects. with seed 42 the final error is 0.089° against 18.57° for gyro-only integration. this is a controlled simulation, not flight data.
 
 ![Tracker outage experiment](docs/tracker-outage.png)
 
-[tests](tests/test_filter.cpp) check the Jacobians against finite differences, the noise integration against a closed form, and 24 seeded runs for bias, outages, fake readings, quaternion sign flips and a covariance that stays symmetric and positive definite.
+the [tests](tests/test_filter.cpp) compare the jacobians with finite differences, check the noise integration against a closed-form solution, and run 24 seeded scenarios covering bias estimation, outages, false readings, quaternion sign flips, and covariance symmetry and positive definiteness.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
@@ -30,4 +37,4 @@ ctest --test-dir build --output-on-failure
 ./build/attitude-demo 42 > trace.csv
 ```
 
-needs Eigen and a decent starting attitude. no lost-in-space solve, no clock offsets, no tracker misalignment, gaussian noise only. based on Markley and Bauer's [attitude error representations](https://ntrs.nasa.gov/citations/20020060647).
+requires eigen and a reasonable initial attitude. not modelled: lost-in-space initialisation, clock offsets, tracker misalignment, non-gaussian noise. the formulation follows markley and bauer, [attitude error representations for kalman filtering](https://ntrs.nasa.gov/citations/20020060647).
