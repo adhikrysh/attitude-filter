@@ -1,20 +1,14 @@
 # attitude-filter
 
-close your eyes and point at the door. you know roughly where it is, by feel. now spin slowly for a minute and point again. you are wrong, and you have no idea by how much.
+star trackers go blind: sun in the baffle, a slew, a fault. while one is out, the spacecraft points on gyro alone, and a gyro with a constant bias turns into an attitude error that keeps growing.
 
-a spacecraft lives that way. its gyroscope is the feel: it reports how fast the craft is rotating, many times a second. its star tracker is the eyes: it photographs stars and says exactly which way the craft points. the trouble is that the eyes blink. bright objects, manoeuvres, and faults can all leave the tracker blind for a while, and during that time the craft points by feel alone.
-
-feel has a flaw. a real gyro is wrong by a small, steady amount called bias. integrate a steady error and it becomes a growing one. in this project's simulation, trusting the gyro alone ends **18.57°** off. the filter ends **0.089°** off, because it learns the gyro's lie while the eyes are open and keeps correcting for it when they close.
-
-## what it does
-
-estimate a spacecraft's orientation through star-tracker outages while learning the gyroscope's persistent bias. a gyroscope measures rotation rate; a star tracker measures orientation from stars. integrating the gyro alone also integrates its bias, so even a small sensor offset becomes a growing pointing error.
+in this project's seeded run, gyro-only integration ends **18.57°** off. the filter ends at **0.089°**, because it learned the bias while the tracker could still see.
 
 the filter represents orientation with a unit quaternion, learns bias alongside it, rejects implausible tracker readings, and moves the uncertainty into the correct coordinates after every accepted correction.
 
 ## prediction and measurement updates
 
-the library keeps an orientation, a three-component bias estimate, and a covariance matrix describing uncertainty and the relationships between errors. gyro rates use radians per second; sample intervals use seconds. tracker uncertainty describes small angular errors in radians squared.
+the library keeps an orientation, a three-component bias estimate, and a covariance matrix. gyro rates use radians per second; sample intervals use seconds. tracker uncertainty describes small angular errors in radians squared.
 
 ```text
 gyro + sample interval
@@ -58,7 +52,7 @@ the rotation convention is explicit: a quaternion rotates body-frame vectors int
 
 the tracker update solves a factored linear system rather than forming a matrix inverse. a Joseph-form covariance update combines the prior uncertainty and measurement noise in a way that reduces numerical loss of symmetry and positive definiteness.
 
-applying an attitude correction changes the origin of the local error coordinates, so the covariance moves with it. the implementation uses the rotation exponential's right Jacobian, the local map between these error coordinates, to reset the covariance, including its angle/bias cross terms. normalizing the corrected quaternion alone leaves the uncertainty in the old frame.
+applying an attitude correction changes the origin of the local error coordinates, so the covariance moves with it. the implementation uses the right Jacobian of the rotation exponential to reset the covariance, including its angle/bias cross terms. normalizing the corrected quaternion alone leaves the uncertainty in the old frame.
 
 prediction and correction build and validate a complete candidate before changing the stored estimate. invalid measurements or a failed covariance factorization therefore cannot leave a partially updated filter. [the equations](docs/filter.md) explain the coordinate reset and noise integration.
 
@@ -94,5 +88,3 @@ the demo writes a time series to stdout and a JSON summary to stderr. exact seed
 the filter assumes a reasonably close initial attitude and continuing gyro samples during tracker loss. it does not recover attitude from star images, estimate clock offsets, or model tracker-alignment errors. the simulated noise is Gaussian. real sensor data, calibration errors, and timing would need separate validation before using this for spacecraft operation.
 
 the formulation follows Markley and Bauer's [Attitude Error Representations for Kalman Filtering](https://ntrs.nasa.gov/citations/20020060647).
-
-the whole project is a lesson in humility for sensors: every instrument lies a little, and good estimation is mostly the art of learning exactly how.
